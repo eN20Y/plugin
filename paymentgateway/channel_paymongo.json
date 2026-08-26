@@ -1,0 +1,18 @@
+[
+    {
+        "id": "gcash",
+        "name": "GCash"
+    },
+    {
+        "id": "paymaya",
+        "name": "Maya"
+    },
+    {
+        "id": "qrph",
+        "name": "QRPh"
+    },
+    {
+        "id": "card",
+        "name": "Card"
+    }
+]
