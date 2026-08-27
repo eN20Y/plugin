@@ -1,15 +1,25 @@
 {
-  "plugins": [
-    {
-      "id": "macrodroid",
-      "name": "MacroDroid SMS Gateway",
-      "description": "Send SMS notifications from Billsys through an Android phone using MacroDroid.",
-      "ispaid": false,
-      "author": "eN20Y",
-      "url": "https://github.com/eN20Y/plugin",
-      "github": "https://github.com/eN20Y/plugin",
-      "last_update": "2026-08-27"
-    }
+"plugins": [
+  {
+    "id": "macrodroid",
+    "name": "MacroDroid SMS Gateway",
+    "description": "Send SMS notifications from Billsys through an Android phone using MacroDroid.",
+    "ispaid": false,
+    "author": "eN20Y",
+    "url": "https://github.com/eN20Y/plugin",
+    "github": "https://github.com/eN20Y/plugin",
+    "last_update": "2026-08-27"
+  },
+  {
+    "id": "hsgq_snmp",
+    "name": "HSGQ OLT SNMP",
+    "description": "Monitor HSGQ EPON OLT and ONU status in real time using SNMP.",
+    "ispaid": false,
+    "author": "eN20Y",
+    "url": "https://github.com/eN20Y/plugin",
+    "github": "https://github.com/eN20Y/plugin",
+    "last_update": "2026-08-27"
+  }
   ],
   "payment_gateway": [
     {
