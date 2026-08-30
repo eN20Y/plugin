@@ -23,7 +23,7 @@
     {
       "id": "payment_reminder",
       "name": "Payment Reminder",
-      "description": "Configurable PHPNuxBill payment reminder popup with due and overdue messages, customer account details, Pay Now button, dismissal controls, and Tawk.to support.",
+      "description": "Configurable Billsys payment reminder popup with due and overdue messages, customer account details, Pay Now button, and dismissal controls.",
       "ispaid": false,
       "author": "eN20Y",
       "url": "https://github.com/eN20Y/plugin",
