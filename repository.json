@@ -30,6 +30,22 @@
         "fbpaymentreview.php",
         "ui/fbpaymentreview.tpl"
       ]
+    },
+    {
+      "id": "vendo_payout_collector",
+      "name": "Vendo Payout & Collector",
+      "description": "Manage PisoWiFi vendo collections, partner collectors, and payout transactions from the BILLSYS admin panel.",
+      "ispaid": false,
+      "author": "eN20Y",
+      "url": "https://github.com/eN20Y/plugin",
+      "github": "https://github.com/eN20Y/plugin",
+      "last_update": "2026-10-19",
+      "files": [
+        "partner_collector.php",
+        "ui/partner_collector.tpl",
+        "partner_payout.php",
+        "ui/partner_payout.tpl"
+      ]
     }
   ],
   "payment_gateway": [
@@ -40,7 +56,6 @@
       "ispaid": false,
       "author": "eN20Y",
       "url": "https://github.com/eN20Y/plugin",
-      "github": "https://github.com/eN20Y/plugin",
       "last_update": "2026-08-26"
     }
   ],
