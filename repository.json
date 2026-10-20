@@ -28,7 +28,11 @@
         "fbbroadcast.php",
         "ui/fbbroadcast.tpl",
         "fbpaymentreview.php",
-        "ui/fbpaymentreview.tpl"
+        "ui/fbpaymentreview.tpl",
+        "fbpost.php",
+        "ui/fbpost.tpl",
+        "fbreport.php",
+        "ui/fbreport.tpl"
       ]
     },
     {
