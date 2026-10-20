@@ -2,7 +2,7 @@
 /**
  * Facebook Messenger chatbot for BILLSYS / PHPNuxBill.
  * Webhook: https://YOUR-DOMAIN/?_route=plugin/fb_bot
- * Commands: HELP, LINK <username>, STATUS, PAYMENT <GCASH|MAYA|BANK> (then send a photo of your proof of payment), UNLINK
+ * Commands: HELP, LINK <username>, STATUS, PROBLEM (report an internet problem), PAYMENT <GCASH|MAYA|BANK> (then send a photo of your proof of payment), UNLINK
  *
  * SECURITY: Username-only linking does not prove account ownership. Anyone who
  * knows a customer's username may be able to link their own Facebook account.
@@ -63,6 +63,16 @@ function fb_install()
     $has = $db->query("SHOW COLUMNS FROM tbl_fb_links LIKE 'last_in'")->fetch();
     if (!$has) {
         $db->exec("ALTER TABLE tbl_fb_links ADD COLUMN last_in DATETIME NULL DEFAULT NULL");
+    }
+
+    // One billing account can be linked to only one Facebook account.
+    // If duplicate links already exist this cannot be added until they are removed (see the LINK check below, which still blocks new ones).
+    try {
+        if (!$db->query("SHOW INDEX FROM tbl_fb_links WHERE Key_name = 'uq_customer_id'")->fetch()) {
+            $db->exec("ALTER TABLE tbl_fb_links ADD UNIQUE KEY uq_customer_id (customer_id)");
+        }
+    } catch (Throwable $e) {
+        error_log('fb_bot: could not add unique customer_id index (duplicate links may exist): ' . $e->getMessage());
     }
 
     $db->exec("CREATE TABLE IF NOT EXISTS tbl_fb_reminders (
@@ -135,6 +145,32 @@ function fb_install()
         PRIMARY KEY (announcement_id, psid),
         KEY idx_fb_ann_psid_status (psid, status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Internet problem reports sent by customers from Messenger (read by the admin dashboard).
+    // status: open | in_progress | resolved
+    // category: NO_INTERNET | SLOW | INTERMITTENT | OTHER
+    $db->exec("CREATE TABLE IF NOT EXISTS tbl_fb_issues (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        psid VARCHAR(64) NOT NULL,
+        customer_id INT NOT NULL,
+        category VARCHAR(20) NOT NULL,
+        details VARCHAR(1000) NULL DEFAULT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'open',
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NULL DEFAULT NULL,
+        resolved_at DATETIME NULL DEFAULT NULL,
+        handled_by VARCHAR(100) NULL DEFAULT NULL,
+        admin_notes VARCHAR(500) NULL DEFAULT NULL,
+        KEY idx_fb_issue_status (status),
+        KEY idx_fb_issue_customer (customer_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Remembers the problem type while we wait for the customer's description.
+    $db->exec("CREATE TABLE IF NOT EXISTS tbl_fb_issue_pending (
+        psid VARCHAR(64) NOT NULL PRIMARY KEY,
+        category VARCHAR(20) NOT NULL,
+        created_at DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
 function fb_send($psid, $message, array $quickReplies = [])
@@ -191,24 +227,42 @@ function fb_send($psid, $message, array $quickReplies = [])
     return true;
 }
 
+/** Problem types shown as buttons: payload key => label. */
+function fb_issue_categories()
+{
+    return [
+        'NO_INTERNET'  => 'No internet',
+        'SLOW'         => 'Slow internet',
+        'INTERMITTENT' => 'On and off connection',
+        'OTHER'        => 'Other problem',
+    ];
+}
+
 /**
  * Tappable buttons shown under a reply. Each button sends its payload back to the bot,
  * and the payload is handled exactly like a typed command (e.g. "PAYMENT GCASH").
+ * Every reply gets buttons, except while the bot is waiting for a payment photo.
  */
 function fb_quick_replies($incoming, $isLinked)
 {
-    if (!$isLinked) {
-        return [];
-    }
     $btn = function ($title, $payload) {
         return ['content_type' => 'text', 'title' => $title, 'payload' => $payload];
     };
+
+    // Not linked yet: offer to link, or show help.
+    $unlinked = [
+        $btn('🔗 Link account', 'LINK'),
+        $btn('❓ Help', 'HELP'),
+    ];
 
     $text = strtoupper(trim(preg_replace('/\s+/u', ' ', (string) $incoming)));
     $parts = $text === '' ? [''] : explode(' ', $text);
     $command = $parts[0];
 
     if ($command === 'PAYMENT') {
+        if (!$isLinked) {
+            return $unlinked;
+        }
         // Valid method chosen: the bot is now waiting for the photo, so no buttons.
         if (count($parts) === 2 && in_array($parts[1], ['GCASH', 'MAYA', 'BANK'], true)) {
             return [];
@@ -219,12 +273,31 @@ function fb_quick_replies($incoming, $isLinked)
             $btn('Bank', 'PAYMENT BANK'),
         ];
     }
-    if ($command === 'UNLINK') {
-        return [];
+
+    if (!$isLinked) {
+        return $unlinked;
     }
+
+    if ($command === 'PROBLEM') {
+        $cats = fb_issue_categories();
+        // Type chosen: waiting for the description, so offer Skip / Cancel.
+        if (count($parts) === 2 && isset($cats[$parts[1]])) {
+            return [
+                $btn('⏭️ Skip', 'SKIP'),
+                $btn('✖️ Cancel', 'CANCEL'),
+            ];
+        }
+        $buttons = [];
+        foreach ($cats as $key => $label) {
+            $buttons[] = $btn($label, 'PROBLEM ' . $key);
+        }
+        return $buttons;
+    }
+
     return [
         $btn('📊 Status', 'STATUS'),
         $btn('💳 Pay', 'PAYMENT'),
+        $btn('🛠️ Report problem', 'PROBLEM'),
         $btn('❓ Help', 'HELP'),
     ];
 }
@@ -336,6 +409,7 @@ function fb_help()
         . "Here are the commands you can use:\n\n"
         . "🔗 LINK <username> - Link your account\n"
         . "📌 STATUS - View your account status\n"
+        . "🛠️ PROBLEM - Report an internet problem\n"
         . "💳 PAYMENT GCASH - Send proof of payment (GCash)\n"
         . "💳 PAYMENT MAYA - Send proof of payment (Maya)\n"
         . "💳 PAYMENT BANK - Send proof of payment (Bank)\n"
@@ -536,6 +610,64 @@ function fb_receive_image($psid, $imageUrl)
     return fb_payment_message($customer, $pending['payment_method'], $submittedAt);
 }
 
+/** Returns the pending problem type for this customer (valid for 15 minutes), or null. */
+function fb_issue_pending($psid)
+{
+    $db = ORM::get_db();
+    $stmt = $db->prepare('SELECT category, created_at FROM tbl_fb_issue_pending WHERE psid = ? LIMIT 1');
+    $stmt->execute([(string) $psid]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return null;
+    }
+    if (strtotime($row['created_at']) < time() - 15 * 60) {
+        $del = $db->prepare('DELETE FROM tbl_fb_issue_pending WHERE psid = ?');
+        $del->execute([(string) $psid]);
+        return null;
+    }
+    return $row;
+}
+
+/** Save a problem report and build the confirmation message. */
+function fb_submit_issue($psid, $customer, $category, $details)
+{
+    $db = ORM::get_db();
+    $cats = fb_issue_categories();
+    $label = $cats[$category] ?? 'Other problem';
+
+    // Do not create a second ticket while one is still open (last 2 hours).
+    $dup = $db->prepare("SELECT id FROM tbl_fb_issues WHERE customer_id = ? AND status IN ('open','in_progress') AND created_at > ? ORDER BY id DESC LIMIT 1");
+    $dup->execute([(int) $customer['id'], date('Y-m-d H:i:s', time() - 2 * 3600)]);
+    $existing = $dup->fetch(PDO::FETCH_ASSOC);
+    if ($existing) {
+        return 'You already have an open problem report (Ticket #' . (int) $existing['id'] . ").\n\nOur team is working on it. Please wait for an update, or contact customer support if it is urgent.";
+    }
+
+    $details = trim((string) $details);
+    $details = function_exists('mb_substr') ? mb_substr($details, 0, 500, 'UTF-8') : substr($details, 0, 500);
+
+    $now = time();
+    $ins = $db->prepare("INSERT INTO tbl_fb_issues (psid, customer_id, category, details, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)");
+    $ins->execute([
+        (string) $psid,
+        (int) $customer['id'],
+        $category,
+        $details !== '' ? $details : null,
+        date('Y-m-d H:i:s', $now),
+    ]);
+    $id = (int) $db->lastInsertId();
+
+    return "Hello! Your problem report has been received:\n\n"
+        . "🎫 Ticket: #{$id}\n"
+        . fb_account_line($customer)
+        . fb_name_line($customer)
+        . "🛠️ Problem: {$label}\n"
+        . ($details !== '' ? "📝 Details: {$details}\n" : '')
+        . "📌 Status: 🟡 Open\n"
+        . '📅 Submitted: ' . date('M d, Y g:i A', $now) . "\n\n"
+        . 'Thank you! Our technicians will check this as soon as possible.';
+}
+
 function fb_status_message($customer, $record)
 {
     $plan = '-';
@@ -584,6 +716,29 @@ function fb_reply($psid, $text)
     $command = strtoupper($parts[0]);
     $link = ORM::for_table('tbl_fb_links')->where('psid', (string) $psid)->find_one();
 
+    // A problem report is waiting for its description: the next normal message is that description.
+    if ($link) {
+        $upper = strtoupper($text);
+        $isCommand = in_array($upper, ['HELP', 'STATUS', 'UNLINK', 'SKIP', 'CANCEL'], true)
+            || preg_match('/^(PAYMENT|PROBLEM|LINK)( |$)/', $upper);
+        $pendingIssue = fb_issue_pending($psid);
+        if ($pendingIssue && ($upper === 'SKIP' || $upper === 'CANCEL' || !$isCommand)) {
+            $db = ORM::get_db();
+            $clear = $db->prepare('DELETE FROM tbl_fb_issue_pending WHERE psid = ?');
+            $clear->execute([(string) $psid]);
+
+            if ($upper === 'CANCEL') {
+                return 'Your problem report has been cancelled. You can send PROBLEM any time to start a new one.';
+            }
+            $customer = ORM::for_table('tbl_customers')->find_one((int) $link['customer_id']);
+            if (!$customer) {
+                $link->delete();
+                return 'We could not retrieve the billing account associated with this Facebook profile. Please contact customer support for assistance.';
+            }
+            return fb_submit_issue($psid, $customer, $pendingIssue['category'], $upper === 'SKIP' ? '' : $text);
+        }
+    }
+
     if ($command === 'LINK') {
         if ($link) {
             return 'Your Facebook account is already linked to a billing account. To link a different account, please send UNLINK first.';
@@ -600,6 +755,13 @@ function fb_reply($psid, $text)
         $username = trim($parts[1]);
         $customer = ORM::for_table('tbl_customers')->where('username', $username)->find_one();
         if ($customer) {
+            // One username can be linked to only one Facebook account.
+            $takenStmt = ORM::get_db()->prepare('SELECT id FROM tbl_fb_links WHERE customer_id = ? AND psid <> ? LIMIT 1');
+            $takenStmt->execute([(int) $customer['id'], (string) $psid]);
+            if ($takenStmt->fetch()) {
+                return "This username is already linked to another Facebook account, so it cannot be linked again.\n\nIf this is your account, please contact customer support and we will help you.";
+            }
+
             try {
                 // Re-check this PSID before writing. Update a stale existing row
                 // instead of failing on the unique PSID index.
@@ -616,30 +778,41 @@ function fb_reply($psid, $text)
                     $insert = $db->prepare('INSERT INTO tbl_fb_links (psid, customer_id, linked_at, last_in) VALUES (?, ?, ?, ?)');
                     $insert->execute([(string) $psid, (int) $customer['id'], $now, $now]);
                 }
-                if ($failure) {
-                    $failure->delete();
+
+                // tbl_fb_fails has no "id" column, so clear it with plain SQL (not the ORM delete()).
+                // A failure here must never turn a successful link into an error message.
+                try {
+                    $clear = $db->prepare('DELETE FROM tbl_fb_fails WHERE psid = ?');
+                    $clear->execute([(string) $psid]);
+                } catch (Throwable $e) {
+                    error_log('fb_bot: could not clear failed-link counter: ' . $e->getMessage());
                 }
+
                 $name = trim((string) ($customer['fullname'] ?? ''));
                 return 'Your Facebook account has been successfully linked' . ($name !== '' ? ' to the billing account of ' . $name : ' to your billing account') . ".\n\nYou may now send STATUS to view your account status. Thank you for using our service.";
             } catch (Exception $e) {
+                if ((string) $e->getCode() === '23000') {
+                    return "This username is already linked to another Facebook account, so it cannot be linked again.\n\nIf this is your account, please contact customer support and we will help you.";
+                }
                 error_log('fb_bot: account link failed: ' . $e->getMessage());
                 return 'We are unable to complete your account linking request at this time. Please try again later or contact customer support.';
             }
         }
 
-        if (!$failure) {
-            $failure = ORM::for_table('tbl_fb_fails')->create();
-            $failure->psid = (string) $psid;
-            $failure->fails = 0;
+        // Wrong username: count the failed attempt (plain SQL, because tbl_fb_fails has no "id" column).
+        $attempts = $failure ? (int) $failure['fails'] + 1 : 1;
+        try {
+            $db = ORM::get_db();
+            if ($attempts >= 5) {
+                $save = $db->prepare('REPLACE INTO tbl_fb_fails (psid, fails, locked_until) VALUES (?, 0, ?)');
+                $save->execute([(string) $psid, date('Y-m-d H:i:s', time() + 15 * 60)]);
+            } else {
+                $save = $db->prepare('REPLACE INTO tbl_fb_fails (psid, fails, locked_until) VALUES (?, ?, NULL)');
+                $save->execute([(string) $psid, $attempts]);
+            }
+        } catch (Throwable $e) {
+            error_log('fb_bot: could not record failed link attempt: ' . $e->getMessage());
         }
-        $attempts = (int) $failure['fails'] + 1;
-        if ($attempts >= 5) {
-            $failure->fails = 0;
-            $failure->locked_until = date('Y-m-d H:i:s', time() + 15 * 60);
-        } else {
-            $failure->fails = $attempts;
-        }
-        $failure->save();
         return 'We could not locate a billing account matching the username provided. Please verify your registered username and try again. If the issue persists, contact customer support.';
     }
 
@@ -666,6 +839,26 @@ function fb_reply($psid, $text)
             . "This request expires in 15 minutes.";
     }
 
+    if ($command === 'PROBLEM') {
+        if (!$link) {
+            return "To report a problem, please link your BILLSYS account first by sending:\n\nLINK <username>";
+        }
+        $cats = fb_issue_categories();
+        $category = strtoupper(trim($parts[1] ?? ''));
+        if (count($parts) !== 2 || !isset($cats[$category])) {
+            return "🛠️ What kind of internet problem are you having?\n\nTap one of the buttons below.";
+        }
+
+        $db = ORM::get_db();
+        $stmt = $db->prepare('REPLACE INTO tbl_fb_issue_pending (psid, category, created_at) VALUES (?, ?, ?)');
+        $stmt->execute([(string) $psid, $category, date('Y-m-d H:i:s')]);
+
+        return '📝 ' . $cats[$category] . "\n\n"
+            . "Please type a short description of the problem, for example since when it started and what lights your modem shows.\n\n"
+            . "Tap Skip to send the report without details, or Cancel to stop.\n\n"
+            . 'This request expires in 15 minutes.';
+    }
+
     if ($command === 'UNLINK') {
         // Delete by PSID directly to ensure the link is removed from the database.
         $db = ORM::get_db();
@@ -677,6 +870,8 @@ function fb_reply($psid, $text)
         $stmt = $db->prepare('DELETE FROM tbl_fb_fails WHERE psid = ?');
         $stmt->execute([(string) $psid]);
         $stmt = $db->prepare('DELETE FROM tbl_fb_payment_pending WHERE psid = ?');
+        $stmt->execute([(string) $psid]);
+        $stmt = $db->prepare('DELETE FROM tbl_fb_issue_pending WHERE psid = ?');
         $stmt->execute([(string) $psid]);
 
         if ($removed || $link) {
@@ -805,7 +1000,8 @@ function fb_bot()
                     $linked->last_in = date('Y-m-d H:i:s');
                     $linked->save();
                 }
-                $quick = (empty($attachments) && $message !== '')
+                // Buttons on every reply, except the photo steps of the payment flow.
+                $quick = empty($attachments)
                     ? fb_quick_replies($message, (bool) $linked)
                     : [];
                 fb_send($psid, $reply, $quick);
