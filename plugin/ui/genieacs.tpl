@@ -80,11 +80,11 @@
                                         <td>{if $d._customer_id}<span class="label label-success">#{$d._customer_id|escape}</span>{else}<span class="label label-warning">Unassigned</span>{/if}</td>
                                         <td>
                                             <button class="btn btn-xs btn-primary" data-toggle="modal" data-target="#gacsAssign" data-device="{$d._id|escape}">Assign</button>
-                                            <button class="btn btn-xs btn-info" data-toggle="modal" data-target="#gacsWifi" data-device="{$d._id|escape}">WiFi</button>
+                                            {if $d._customer_id}<button class="btn btn-xs btn-info" data-toggle="modal" data-target="#gacsWifi" data-device="{$d._id|escape}">WiFi</button>{else}<button class="btn btn-xs btn-info" disabled title="Assign ONU first">WiFi</button>{/if}
                                             <form method="post" action="?_route=plugin/genieacs_reboot" style="display:inline" onsubmit="return confirm('Reboot this ONU?');">
                                                 <input type="hidden" name="csrf_token" value="{$genieacsCsrf|escape}">
                                                 <input type="hidden" name="device_id" value="{$d._id|escape}">
-                                                <button class="btn btn-xs btn-warning" type="submit">Reboot</button>
+                                                <button class="btn btn-xs btn-warning" type="submit" {if !$d._customer_id}disabled title="Assign ONU first"{/if}>Reboot</button>
                                             </form>
                                             {if $d._customer_id}
                                             <form method="post" action="?_route=plugin/genieacs_unassign" style="display:inline" onsubmit="return confirm('Remove customer binding?');">
