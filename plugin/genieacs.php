@@ -181,7 +181,10 @@ function genieacs_wifi()
 function genieacs_reboot()
 {
     $back=getUrl('plugin/genieacs'); genieacs_guard($back,true);
-    $id=trim((string)($_POST['device_id'] ?? '')); if ($id==='') r2($back,'e','Select a device.');
+    $id=trim((string)($_POST['device_id'] ?? ''));
+    if ($id==='') r2($back,'e','Select a device.');
+    $links=genieacs_links_get();
+    if (!isset($links[$id])) r2($back,'e','Assign this ONU to a BILLSYS customer before managing it.');
     try {
         $result=genieacs_nbi_request('POST','/devices/'.rawurlencode($id).'/tasks',['name'=>'reboot'],['timeout'=>30000,'connection_request'=>'']);
         r2($back,'s','Reboot task submitted: '.(string)($result['_id'] ?? 'queued'));
