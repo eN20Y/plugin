@@ -1,6 +1,6 @@
 {include file="sections/header.tpl"}
 
-{if $routes[1] == 'genieacs_config'}
+{if $_routes[1] == 'genieacs_config'}
     <div class="row">
         <div class="col-md-8 col-md-offset-2">
             <div class="panel panel-primary">
