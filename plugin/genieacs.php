@@ -144,9 +144,7 @@ function genieacs_assign()
         if (empty($items[0]['_id'])) r2($back,'e','Device not found in GenieACS.');
     } catch (Throwable $e) { r2($back,'e',$e->getMessage()); }
     $links=genieacs_links_get();
-    foreach ($links as $otherId=>$link) if ($otherId!==$id && (string)($link['customer_id'] ?? '')===$cid) {
-        // Multiple ONUs per customer are allowed; do not reject this assignment.
-    }
+    // One ONU may belong to only one customer; one customer may have many ONUs.
     $links[$id]=['customer_id'=>$cid,'updated_at'=>date('c')];
     genieacs_config_set('genieacs_links',json_encode($links));
     r2($back,'s','ONU assigned to customer #'.$cid.'.');
