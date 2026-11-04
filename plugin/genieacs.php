@@ -113,7 +113,7 @@ function genieacs()
     $ui->assign('genieacsDevices', $devices);
     $ui->assign('genieacsError', $error);
     $ui->assign('genieacsConfigured', $cfg['genieacs_nbi_url'] !== '');
-    $ui->assign('genieacsCsrf', class_exists('Csrf') ? Csrf::getToken() : '');
+    $ui->assign('genieacsCsrf', class_exists('Csrf') ? Csrf::generateAndStoreToken() : '');
     $ui->display('genieacs.tpl');
 }
 function genieacs_config()
@@ -131,7 +131,7 @@ function genieacs_config()
     }
     $ui->assign('_admin', Admin::_info()); $ui->assign('_system_menu', 'plugin/genieacs');
     $ui->assign('_title', 'GenieACS Configuration'); $ui->assign('genieacsConfig', genieacs_config_get());
-    $ui->assign('genieacsCsrf', class_exists('Csrf') ? Csrf::getToken() : '');
+    $ui->assign('genieacsCsrf', class_exists('Csrf') ? Csrf::generateAndStoreToken() : '');
     $ui->display('genieacs.tpl');
 }
 function genieacs_assign()
