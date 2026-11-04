@@ -161,6 +161,11 @@ function genieacs_wifi()
     $id=trim((string)($_POST['device_id'] ?? '')); $band=(string)($_POST['band'] ?? '2g');
     $ssid=trim((string)($_POST['ssid'] ?? '')); $password=(string)($_POST['wifi_password'] ?? '');
     if ($id==='' || !in_array($band,['2g','5g'],true)) r2($back,'e','Invalid device or band.');
+
+    // Only allow changes to a device that has been explicitly bound to a customer.
+    $links=genieacs_links_get();
+    if (!isset($links[$id])) r2($back,'e','Assign this ONU to a BILLSYS customer before managing it.');
+
     $index=$band==='2g'?'1':'5'; $params=[];
     if ($ssid!=='') $params[]=["InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.SSID",$ssid,'xsd:string'];
     if ($password!=='') {
@@ -170,7 +175,7 @@ function genieacs_wifi()
     if (!$params) r2($back,'e','Enter an SSID or password.');
     try {
         $result=genieacs_nbi_request('POST','/devices/'.rawurlencode($id).'/tasks',['name'=>'setParameterValues','parameterValues'=>$params],['timeout'=>30000,'connection_request'=>'']);
-        r2($back,'s','Task submitted: '.(string)($result['_id'] ?? 'queued').'. Verify execution in GenieACS before reporting success.');
+        r2($back,'s','Task submitted: '.(string)($result['_id'] ?? 'queued').'. Check task execution before reporting success.');
     } catch (Throwable $e) { r2($back,'e',$e->getMessage()); }
 }
 function genieacs_reboot()
