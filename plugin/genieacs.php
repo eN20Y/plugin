@@ -195,55 +195,37 @@ function genieacs_value($device, $path)
  */
 function genieacs_wifi_clients_count($device)
 {
-    $total = 0;
-    $seenMacs = [];
-
-    for ($radio = 1; $radio <= 8; $radio++) {
-        $base = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.' . $radio;
-        $node = $device;
-        foreach (explode('.', $base . '.AssociatedDevice') as $part) {
-            if (!is_array($node) || !array_key_exists($part, $node)) {
-                $node = [];
-                break;
-            }
-            $node = $node[$part];
+    $hosts = $device['InternetGatewayDevice']['LANDevice']['1']['Hosts']['Host'] ?? [];
+    $seen = [];
+    if (is_array($hosts)) {
+        foreach ($hosts as $i => $h) {
+            if (!ctype_digit((string)$i) || !is_array($h)) continue;
+            $mac = strtoupper(trim((string)($h['MACAddress']['_value'] ?? '')));
+            if ($mac !== '' && $mac !== '00:00:00:00:00:00') $seen[$mac] = true;
         }
-
-        $radioCount = 0;
-        if (is_array($node)) {
-            foreach ($node as $index => $entry) {
-                if (!ctype_digit((string)$index) || !is_array($entry)) continue;
-                $mac = strtoupper(trim((string)(
-                    $entry['AssociatedDeviceMACAddress']['_value']
-                    ?? $entry['MACAddress']['_value']
-                    ?? ''
-                )));
-                if ($mac !== '' && $mac !== '00:00:00:00:00:00' && !isset($seenMacs[$mac])) {
-                    $seenMacs[$mac] = true;
-                    $radioCount++;
-                }
-            }
-        }
-
-        if ($radioCount === 0) {
-            foreach (['AssociatedDeviceNumberOfEntries', 'TotalAssociations'] as $leaf) {
-                $raw = genieacs_value($device, $base . '.' . $leaf);
-                if ($raw !== '' && is_numeric($raw)) {
-                    $radioCount = max(0, (int)$raw);
-                    break;
-                }
-            }
-        }
-        $total += $radioCount;
     }
-    return $total;
+    return count($seen);
 }
 
 function genieacs_devices_fetch()
 {
-    return genieacs_nbi_request('GET', '/devices/', null, ['projection' =>
-        '_id,_lastInform,DeviceID,InternetGatewayDevice.DeviceInfo.Manufacturer,InternetGatewayDevice.DeviceInfo.ModelName,InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username,InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID,InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.Enable,InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.PreSharedKey.1.KeyPassphrase,InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID,InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.Enable,InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.PreSharedKey.1.KeyPassphrase,InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.TotalAssociations,InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.2.TotalAssociations,InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.3.TotalAssociations,InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.4.TotalAssociations,InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.TotalAssociations,InternetGatewayDevice.LANDevice.1.WLANConfiguration.6.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.6.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.6.TotalAssociations,InternetGatewayDevice.LANDevice.1.WLANConfiguration.7.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.7.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.7.TotalAssociations,InternetGatewayDevice.LANDevice.1.WLANConfiguration.8.AssociatedDevice.*,InternetGatewayDevice.LANDevice.1.WLANConfiguration.8.AssociatedDeviceNumberOfEntries,InternetGatewayDevice.LANDevice.1.WLANConfiguration.8.TotalAssociations,InternetGatewayDevice.LANDevice.1.Hosts.Host.*.MACAddress,VirtualParameters.OpticalPower,InternetGatewayDevice.WANDevice.1.X_GponInterafceConfig.RXPower,InternetGatewayDevice.WANDevice.1.X_GponInterfaceConfig.RXPower,InternetGatewayDevice.WANDevice.1.X_HW_DEBUG.AdminTR069.RxPower,InternetGatewayDevice.X_HW_DEBUG.AdminTR069.RxPower'
-    ]) ?: [];
+    $wlan = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.';
+    $fields = [
+        '_id', '_lastInform', 'DeviceID',
+        'InternetGatewayDevice.DeviceInfo.Manufacturer',
+        'InternetGatewayDevice.DeviceInfo.ModelName',
+        'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username',
+        $wlan . '1.SSID', $wlan . '1.PreSharedKey.1.KeyPassphrase', $wlan . '1.TotalAssociations',
+        $wlan . '5.SSID', $wlan . '5.PreSharedKey.1.KeyPassphrase', $wlan . '5.TotalAssociations',
+        'InternetGatewayDevice.LANDevice.1.Hosts.Host',
+        'VirtualParameters.OpticalPower',
+        'VirtualParameters.WifiClients',
+        'InternetGatewayDevice.WANDevice.1.X_GponInterafceConfig.RXPower',
+        'InternetGatewayDevice.WANDevice.1.X_GponInterfaceConfig.RXPower',
+        'InternetGatewayDevice.WANDevice.1.X_HW_DEBUG.AdminTR069.RxPower',
+        'InternetGatewayDevice.X_HW_DEBUG.AdminTR069.RxPower',
+    ];
+    return genieacs_nbi_request('GET', '/devices/', null, ['projection' => implode(',', $fields)]) ?: [];
 }
 
 /**
@@ -388,7 +370,10 @@ function genieacs()
                 // Fetch the password parameters for device completeness, but never expose plaintext passwords in the inventory UI.
                 $d['_wifi24_password_set'] = genieacs_value($d, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.PreSharedKey.1.KeyPassphrase') !== '';
                 $d['_wifi5_password_set'] = genieacs_value($d, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.PreSharedKey.1.KeyPassphrase') !== '';
-                $d['_wifi_clients'] = genieacs_wifi_clients_count($d);
+                $vpClients = trim(genieacs_value($d, 'VirtualParameters.WifiClients'));
+                $d['_wifi_clients'] = ($vpClients !== '' && is_numeric($vpClients))
+                    ? (int)$vpClients
+                    : genieacs_wifi_clients_count($d); // fallback if the virtual parameter has no value yet
 
                 $rx = genieacs_optical_rx($d);
                 $rxStatus = genieacs_optical_rx_status($rx);
