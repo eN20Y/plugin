@@ -77,7 +77,7 @@
   "author": "eN20Y",
   "url": "https://github.com/eN20Y/plugin",
   "github": "https://github.com/eN20Y/plugin",
-  "last_update": "2026-11-06",
+  "last_update": "2026-11-05",
   "files": [
     "genieacs.php",
     "ui/genieacs.tpl"
