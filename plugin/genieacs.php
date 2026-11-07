@@ -190,6 +190,24 @@ function genieacs_value($device, $path)
     return is_array($node) ? (string)($node['_value'] ?? '') : '';
 }
 /**
+ * PPPoE username: virtual parameter first, then known real paths (FiberHome index 1, ZTE index 2).
+ */
+function genieacs_pppoe_username($device)
+{
+    $paths = [
+        'VirtualParameters.PPPoEUsername',
+        'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username',
+        'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2.Username',
+    ];
+    foreach ($paths as $path) {
+        $v = trim(genieacs_value($device, $path));
+        if ($v !== '') {
+            return $v;
+        }
+    }
+    return '';
+}
+/**
  * Count connected WiFi clients across TR-098 WLANConfiguration radios.
  * Project AssociatedDevice child rows; use device counters as fallbacks.
  */
@@ -214,7 +232,9 @@ function genieacs_devices_fetch()
         '_id', '_lastInform', 'DeviceID',
         'InternetGatewayDevice.DeviceInfo.Manufacturer',
         'InternetGatewayDevice.DeviceInfo.ModelName',
+        'VirtualParameters.PPPoEUsername',
         'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username',
+        'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2.Username',
         $wlan . '1.SSID', $wlan . '1.PreSharedKey.1.KeyPassphrase', $wlan . '1.TotalAssociations',
         $wlan . '5.SSID', $wlan . '5.PreSharedKey.1.KeyPassphrase', $wlan . '5.TotalAssociations',
         'InternetGatewayDevice.LANDevice.1.Hosts.Host',
@@ -345,10 +365,7 @@ function genieacs()
 
             foreach ($devices as $d) {
                 $id = trim((string)($d['_id'] ?? ''));
-                $pppoe = trim(genieacs_value(
-                    $d,
-                    'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username'
-                ));
+                $pppoe = genieacs_pppoe_username($d);
                 $lookup = strtolower($pppoe);
 
                 if ($id === '' || $lookup === '' || !isset($customerMap[$lookup])) {
