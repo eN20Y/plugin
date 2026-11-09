@@ -235,8 +235,15 @@ function genieacs_devices_fetch()
         'VirtualParameters.PPPoEUsername',
         'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username',
         'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2.Username',
-        $wlan . '1.SSID', $wlan . '1.PreSharedKey.1.KeyPassphrase', $wlan . '1.TotalAssociations',
-        $wlan . '5.SSID', $wlan . '5.PreSharedKey.1.KeyPassphrase', $wlan . '5.TotalAssociations',
+        $$wlan . '1.SSID',
+        $wlan . '1.KeyPassphrase',
+        $wlan . '1.PreSharedKey.1.KeyPassphrase',
+        $wlan . '1.TotalAssociations',
+
+        $wlan . '5.SSID',
+        $wlan . '5.KeyPassphrase',
+        $wlan . '5.PreSharedKey.1.KeyPassphrase',
+        $wlan . '5.TotalAssociations',
         'InternetGatewayDevice.LANDevice.1.Hosts.Host',
         'VirtualParameters.OpticalPower',
         'VirtualParameters.WifiClients',
@@ -385,8 +392,15 @@ function genieacs()
                 $d['_ssid1'] = genieacs_value($d, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.SSID');
                 $d['_ssid2'] = genieacs_value($d, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.SSID');
                 // Fetch the password parameters for device completeness, but never expose plaintext passwords in the inventory UI.
-                $d['_wifi24_password_set'] = genieacs_value($d, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.PreSharedKey.1.KeyPassphrase') !== '';
-                $d['_wifi5_password_set'] = genieacs_value($d, 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.PreSharedKey.1.KeyPassphrase') !== '';
+                $d['_wifi24_password_set'] = genieacs_value(
+                    $d,
+                    'InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.KeyPassphrase'
+                ) !== '';
+
+                $d['_wifi5_password_set'] = genieacs_value(
+                    $d,
+                    'InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.KeyPassphrase'
+                ) !== '';
                 $vpClients = trim(genieacs_value($d, 'VirtualParameters.WifiClients'));
                 $d['_wifi_clients'] = ($vpClients !== '' && is_numeric($vpClients))
                     ? (int)$vpClients
@@ -480,7 +494,11 @@ function genieacs_wifi()
     if ($ssid!=='') $params[]=["InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.SSID",$ssid,'xsd:string'];
     if ($password!=='') {
         if (strlen($password)<8 || strlen($password)>63) r2($back,'e','WiFi password must be 8 to 63 characters.');
-        $params[]=["InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.PreSharedKey.1.KeyPassphrase",$password,'xsd:string'];
+        $params[]=[
+            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.KeyPassphrase",
+            $password,
+            'xsd:string'
+        ];
     }
     if (!$params) r2($back,'e','Enter an SSID or password.');
     try {
