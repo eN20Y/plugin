@@ -189,6 +189,46 @@ function genieacs_value($device, $path)
     }
     return is_array($node) ? (string)($node['_value'] ?? '') : '';
 }
+
+/**
+ * Check whether a parameter exists in the GenieACS device data.
+ */
+function genieacs_parameter_exists($device, $path)
+{
+    $node = $device;
+
+    foreach (explode('.', $path) as $part) {
+        if (!is_array($node) || !array_key_exists($part, $node)) {
+            return false;
+        }
+
+        $node = $node[$part];
+    }
+
+    return is_array($node);
+}
+
+/**
+ * Detect the supported WiFi password parameter for an ONU.
+ */
+function genieacs_wifi_password_path($device, $index)
+{
+    $base = "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.";
+
+    $paths = [
+        $base . 'PreSharedKey.1.KeyPassphrase',
+        $base . 'KeyPassphrase'
+    ];
+
+    foreach ($paths as $path) {
+        if (genieacs_parameter_exists($device, $path)) {
+            return $path;
+        }
+    }
+
+    return '';
+}
+
 /**
  * PPPoE username: virtual parameter first, then known real paths (FiberHome index 1, ZTE index 2).
  */
@@ -549,17 +589,64 @@ function genieacs_wifi()
     $links=genieacs_links_get();
     if (!isset($links[$id])) r2($back,'e','Assign this ONU to a BILLSYS customer before managing it.');
 
-    $index=$band==='2g'?'1':'5'; $params=[];
-    if ($ssid!=='') $params[]=["InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.SSID",$ssid,'xsd:string'];
-    if ($password!=='') {
-        if (strlen($password)<8 || strlen($password)>63) r2($back,'e','WiFi password must be 8 to 63 characters.');
-        $params[]=[
-            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.KeyPassphrase",
+
+    $index = $band === '2g' ? '1' : '5';
+    $params = [];
+
+    // Update SSID if supplied.
+    if ($ssid !== '') {
+        $params[] = [
+            "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.SSID",
+            $ssid,
+            'xsd:string'
+        ];
+    }
+
+    // Automatically detect the correct password parameter.
+    if ($password !== '') {
+
+        if (strlen($password) < 8 || strlen($password) > 63) {
+            r2($back, 'e', 'WiFi password must be 8 to 63 characters.');
+        }
+
+        // Fetch the exact ONU and inspect its supported parameters.
+        $devices = genieacs_nbi_request(
+            'GET',
+            '/devices/',
+            null,
+            [
+                'query' => json_encode(['_id' => $id]),
+                'projection' => implode(',', [
+                    '_id',
+                    "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.PreSharedKey.1.KeyPassphrase",
+                    "InternetGatewayDevice.LANDevice.1.WLANConfiguration.$index.KeyPassphrase"
+                ])
+            ]
+        );
+
+        $device = $devices[0] ?? [];
+
+        if (empty($device['_id'])) {
+            r2($back, 'e', 'ONU not found in GenieACS.');
+        }
+
+        $passwordPath = genieacs_wifi_password_path($device, $index);
+
+        if ($passwordPath === '') {
+            r2($back, 'e', 'No supported WiFi password parameter found for this ONU.');
+        }
+
+        $params[] = [
+            $passwordPath,
             $password,
             'xsd:string'
         ];
     }
-    if (!$params) r2($back,'e','Enter an SSID or password.');
+
+    if (!$params) {
+        r2($back, 'e', 'Enter an SSID or password.');
+    }
+
     try {
         $result=genieacs_nbi_request('POST','/devices/'.rawurlencode($id).'/tasks',['name'=>'setParameterValues','parameterValues'=>$params],['timeout'=>30000,'connection_request'=>'']);
         r2($back,'s','Task submitted: '.(string)($result['_id'] ?? 'queued').'. Check task execution before reporting success.');
