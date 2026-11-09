@@ -354,6 +354,60 @@ function genieacs_customers_by_pppoe()
     return $map;
 }
 
+
+/**
+ * Automatically save the GenieACS Device ID
+ * into the BILLSYS customer custom fields.
+ */
+function genieacs_customer_device_id_set($customerId, $deviceId)
+{
+    $db = ORM::get_db();
+
+    $stmt = $db->prepare("
+        SELECT id, field_value
+        FROM tbl_customers_fields
+        WHERE customer_id = :customer_id
+          AND field_name = 'Device ID'
+        ORDER BY id ASC
+        LIMIT 1
+    ");
+
+    $stmt->execute([
+        ':customer_id' => (int)$customerId
+    ]);
+
+    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($existing) {
+        if ((string)$existing['field_value'] !== (string)$deviceId) {
+            $update = $db->prepare("
+                UPDATE tbl_customers_fields
+                SET field_value = :device_id
+                WHERE id = :id
+            ");
+
+            $update->execute([
+                ':device_id' => $deviceId,
+                ':id' => (int)$existing['id']
+            ]);
+        }
+
+        return;
+    }
+
+    $insert = $db->prepare("
+        INSERT INTO tbl_customers_fields
+            (customer_id, field_name, field_value)
+        VALUES
+            (:customer_id, 'Device ID', :device_id)
+    ");
+
+    $insert->execute([
+        ':customer_id' => (int)$customerId,
+        ':device_id' => $deviceId
+    ]);
+}
+
 function genieacs()
 {
     global $ui;
@@ -380,6 +434,11 @@ function genieacs()
                 }
 
                 $customerId = (int)$customerMap[$lookup]['id'];
+
+                // Save actual GenieACS Device ID to BILLSYS customer fields.
+                genieacs_customer_device_id_set($customerId, $id);
+
+                // Keep existing ONU mapping for WiFi management and reboot.
                 genieacs_link_set($id, $customerId);
 
                 $d['_customer_id'] = (string)$customerId;
