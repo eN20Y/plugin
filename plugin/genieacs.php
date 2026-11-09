@@ -235,7 +235,7 @@ function genieacs_devices_fetch()
         'VirtualParameters.PPPoEUsername',
         'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.Username',
         'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2.Username',
-        $$wlan . '1.SSID',
+        $wlan . '1.SSID',
         $wlan . '1.KeyPassphrase',
         $wlan . '1.PreSharedKey.1.KeyPassphrase',
         $wlan . '1.TotalAssociations',
