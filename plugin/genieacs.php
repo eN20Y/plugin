@@ -396,31 +396,60 @@ function genieacs_customers_by_pppoe()
 /**
  * Extract compound surname from customer fullname.
  */
+
 function genieacs_extract_surname($fullname)
 {
-    $parts = preg_split('/\s+/', trim($fullname));
+    $fullname = trim((string)$fullname);
+    $fullname = preg_replace('/\s+/u', ' ', $fullname);
 
-    if (!$parts || count($parts) < 2) {
+    if ($fullname === '') {
         return '';
     }
 
-    $last = array_pop($parts);
-    $previous = strtolower(end($parts));
+    $parts = preg_split('/\s+/u', $fullname);
 
-    $compoundPrefixes = [
+    if (!$parts || count($parts) === 0) {
+        return '';
+    }
+
+    // Accept a one-word customer name.
+    if (count($parts) === 1) {
+        return $parts[0];
+    }
+
+    $last = array_pop($parts);
+    $previous = strtolower((string)end($parts));
+
+    // Support compound surnames such as De La Cruz and De Los Santos.
+    $twoWordPrefixes = [
+        'de la',
+        'de los',
+        'de las',
+        'van der',
+        'van den',
+        'von der'
+    ];
+
+    if (count($parts) >= 2) {
+        $lastTwo = strtolower($parts[count($parts) - 2] . ' ' . $parts[count($parts) - 1]);
+
+        if (in_array($lastTwo, $twoWordPrefixes, true)) {
+            return $lastTwo . ' ' . $last;
+        }
+    }
+
+    $oneWordPrefixes = [
         'dela', 'de', 'del', 'dos', 'das',
         'los', 'las', 'san', 'santa', 'van', 'von'
     ];
 
-    if (in_array($previous, $compoundPrefixes, true)) {
-        array_pop($parts);
-        $surname = $previous . ' ' . $last;
-    } else {
-        $surname = $last;
+    if (in_array($previous, $oneWordPrefixes, true)) {
+        return $previous . ' ' . $last;
     }
 
-    return trim($surname);
+    return $last;
 }
+
 
 /**
  * Generate customer WiFi password.
