@@ -67,6 +67,48 @@
 #geniesysWifi .field-meta .bad { color:#d9534f; }
 #geniesysWifi .input-group .btn { height:38px; }
 
+/* Auto-generate modal */
+#geniesysAuto .modal-dialog { margin-top:60px; }
+#geniesysAuto .modal-content { border:0; border-radius:10px; overflow:hidden; box-shadow:0 10px 35px rgba(0,0,0,.25); }
+#geniesysAuto .modal-header { background:#5cb85c; color:#fff; border:0; padding:18px 25px; }
+#geniesysAuto .modal-header .close { color:#fff; opacity:.9; font-size:28px; text-shadow:none; margin-top:-2px; }
+#geniesysAuto .modal-title { font-size:20px; font-weight:600; }
+#geniesysAuto .modal-body { padding:20px 25px; }
+#geniesysAuto .modal-footer { padding:14px 25px; border-top:1px solid #eee; }
+#geniesysAuto .ga-who { padding:12px 14px; margin-bottom:16px; background:#f5f8fb; border:1px solid #e2eaf2; border-radius:6px; }
+#geniesysAuto .ga-who strong { display:block; margin-bottom:2px; }
+#geniesysAuto .ga-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 0; border-bottom:1px dashed #e5e5e5; }
+#geniesysAuto .ga-item:last-of-type { border-bottom:0; }
+#geniesysAuto .ga-label { color:#888; font-size:12px; text-transform:uppercase; letter-spacing:.4px; }
+#geniesysAuto .ga-value { font-family:monospace; font-size:15px; font-weight:700; word-break:break-all; text-align:right; }
+#geniesysAuto .ga-warn { margin:14px 0 0; font-size:12px; color:#8a6d3b; }
+#geniesysAuto .ga-eye { border:0; background:none; color:#337ab7; padding:0 0 0 8px; }
+#geniesysAuto .ga-anim { display:none; text-align:center; padding:28px 0 18px; }
+#geniesysAuto .ga-wifi { position:relative; width:90px; height:90px; margin:0 auto 18px; }
+#geniesysAuto .ga-wifi i { position:relative; z-index:2; font-size:42px; line-height:90px; color:#5cb85c; }
+#geniesysAuto .ga-wifi::before,
+#geniesysAuto .ga-wifi::after { content:""; position:absolute; inset:0; border:3px solid #5cb85c; border-radius:50%; opacity:0; animation:gaPulse 1.6s ease-out infinite; }
+#geniesysAuto .ga-wifi::after { animation-delay:.8s; }
+@keyframes gaPulse { 0% { transform:scale(.45); opacity:.9; } 100% { transform:scale(1.5); opacity:0; } }
+#geniesysAuto .ga-bar { height:6px; max-width:260px; margin:0 auto 12px; background:#e5e5e5; border-radius:3px; overflow:hidden; }
+#geniesysAuto .ga-bar span { display:block; width:0; height:100%; background:#5cb85c; border-radius:3px; }
+#geniesysAuto.working .ga-bar span { animation:gaFill 1.8s ease-in-out forwards; }
+@keyframes gaFill { from { width:0; } to { width:100%; } }
+#geniesysAuto .ga-status { font-weight:600; color:#555; }
+#geniesysAuto.working .ga-content,
+#geniesysAuto.working .modal-footer { display:none; }
+#geniesysAuto.working .ga-anim { display:block; }
+#geniesysAuto.working .modal-header .close { display:none; }
+
+body.dark-mode #geniesysAuto .modal-content,
+body.dark-mode #geniesysAuto .modal-body,
+body.dark-mode #geniesysAuto .modal-footer { background:#111827; color:#f3f4f6; }
+body.dark-mode #geniesysAuto .modal-footer { border-color:#374151; }
+body.dark-mode #geniesysAuto .ga-who { background:#1f2937; border-color:#374151; }
+body.dark-mode #geniesysAuto .ga-item { border-color:#374151; }
+body.dark-mode #geniesysAuto .ga-bar { background:#374151; }
+body.dark-mode #geniesysAuto .ga-status { color:#e5e7eb; }
+
 body.dark-mode .geniesys-page .panel,
 body.dark-mode .geniesys-page .panel-body { background:#111827; color:#f3f4f6; }
 body.dark-mode .geniesys-page .table { color:#e5e7eb; }
@@ -213,6 +255,15 @@ body.dark-mode #geniesysWifi .field-meta { color:#9ca3af; }
                                                 data-ssid2="{$d._ssid2|escape:'html'}">
                                                 <i class="fa fa-wifi"></i> WiFi
                                             </button>
+                                            <button type="button" class="btn btn-success btn-xs js-geniesys-auto" title="Auto generate SSID and password"
+                                                data-device="{$d._id|escape:'html'}"
+                                                data-pppoe="{$d._pppoe|default:'-'|escape:'html'}"
+                                                data-customer="{$d._customer_name|default:'-'|escape:'html'}"
+                                                data-ssid24="{$d._generated_ssid24|escape:'html'}"
+                                                data-ssid5="{$d._generated_ssid5|escape:'html'}"
+                                                data-pass="{$d._generated_wifi_password|escape:'html'}">
+                                                <i class="fa fa-magic"></i> Auto
+                                            </button>
                                             <form method="post" action="?_route=plugin/genieacs_reboot" style="display:inline" class="js-reboot-form">
                                                 <input type="hidden" name="csrf_token" value="{$genieacsCsrf|escape}">
                                                 <input type="hidden" name="device_id" value="{$d._id|escape:'html'}">
@@ -282,6 +333,52 @@ body.dark-mode #geniesysWifi .field-meta { color:#9ca3af; }
                 <div class="modal-footer">
                     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                     <button type="submit" id="geniesysWifiSubmit" class="btn btn-primary"><i class="fa fa-save"></i> Submit Configuration</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Auto generate modal -->
+<div class="modal fade" id="geniesysAuto" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <form id="geniesysAutoForm" method="post" action="?_route=plugin/genieacs_autowifi" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{$genieacsCsrf|escape}">
+                <input type="hidden" name="device_id" id="geniesysAutoDevice" value="">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title"><i class="fa fa-magic"></i> Auto Generate WiFi</h4>
+                </div>
+                <div class="modal-body">
+                    <div class="ga-content">
+                        <div class="ga-who">
+                            <strong id="gaCustomer">-</strong>
+                            <span class="muted small">PPPoE: <span id="gaPppoe">-</span></span>
+                        </div>
+                        <div class="ga-item">
+                            <span class="ga-label">SSID 2.4 GHz</span>
+                            <span class="ga-value" id="gaSsid24">-</span>
+                        </div>
+                        <div class="ga-item">
+                            <span class="ga-label">SSID 5 GHz</span>
+                            <span class="ga-value" id="gaSsid5">-</span>
+                        </div>
+                        <div class="ga-item">
+                            <span class="ga-label">Password</span>
+                            <span class="ga-value"><span id="gaPass">********</span><button type="button" class="ga-eye" id="gaEye" title="Show / hide password"><i class="fa fa-eye"></i></button></span>
+                        </div>
+                        <p class="ga-warn"><i class="fa fa-exclamation-triangle"></i> This overwrites the current WiFi name and password on both bands. Connected devices will need to reconnect.</p>
+                    </div>
+                    <div class="ga-anim">
+                        <div class="ga-wifi"><i class="fa fa-wifi"></i></div>
+                        <div class="ga-bar"><span></span></div>
+                        <div class="ga-status" id="gaStatus">Preparing credentials...</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success"><i class="fa fa-check"></i> Confirm</button>
                 </div>
             </form>
         </div>
@@ -397,7 +494,52 @@ window.addEventListener('load', function () {
         submitting = true;
         $submit.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Sending...');
     });
+    /* ---------- Auto generate WiFi ---------- */
+    var $auto = $('#geniesysAuto');
+    $auto.appendTo('body');
 
+    var autoPass = '', passVisible = false, autoSending = false;
+
+    function renderPass() {
+        $('#gaPass').text(passVisible ? autoPass : '********');
+        $('#gaEye i').attr('class', passVisible ? 'fa fa-eye-slash' : 'fa fa-eye');
+    }
+
+    $(document).on('click', '.js-geniesys-auto', function () {
+        var b = this;
+        autoSending = false;
+        passVisible = false;
+        $auto.removeClass('working');
+        $('#geniesysAutoDevice').val(b.getAttribute('data-device') || '');
+        $('#gaCustomer').text(b.getAttribute('data-customer') || '-');
+        $('#gaPppoe').text(b.getAttribute('data-pppoe') || '-');
+        $('#gaSsid24').text(b.getAttribute('data-ssid24') || '-');
+        $('#gaSsid5').text(b.getAttribute('data-ssid5') || '-');
+        autoPass = b.getAttribute('data-pass') || '';
+        renderPass();
+        $auto.modal('show');
+    });
+
+    $('#gaEye').on('click', function () { passVisible = !passVisible; renderPass(); });
+
+    $('#geniesysAutoForm').on('submit', function (e) {
+        if (autoSending) { return true; }
+        e.preventDefault();
+        autoSending = true;
+
+        var form = this;
+        $auto.addClass('working');
+        $('#gaStatus').text('Preparing credentials...');
+        setTimeout(function () { $('#gaStatus').text('Sending to ONU...'); }, 900);
+        setTimeout(function () { form.submit(); }, 1800); // native submit skips this handler
+    });
+
+    $auto.on('hidden.bs.modal', function () {
+        $auto.removeClass('working');
+        autoSending = false;
+        autoPass = '';
+        $('#gaPass').text('********');
+    });
     /* Reboot: confirm once, then block double submits. */
     $(document).on('submit', '.js-reboot-form', function (e) {
         if (!window.confirm('Reboot this ONU? The customer will lose connection for a few minutes.')) {
