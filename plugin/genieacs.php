@@ -393,6 +393,135 @@ function genieacs_customers_by_pppoe()
 
     return $map;
 }
+/**
+ * Extract compound surname from customer fullname.
+ */
+function genieacs_extract_surname($fullname)
+{
+    $parts = preg_split('/\s+/', trim($fullname));
+
+    if (!$parts || count($parts) < 2) {
+        return '';
+    }
+
+    $last = array_pop($parts);
+    $previous = strtolower(end($parts));
+
+    $compoundPrefixes = [
+        'dela', 'de', 'del', 'dos', 'das',
+        'los', 'las', 'san', 'santa', 'van', 'von'
+    ];
+
+    if (in_array($previous, $compoundPrefixes, true)) {
+        array_pop($parts);
+        $surname = $previous . ' ' . $last;
+    } else {
+        $surname = $last;
+    }
+
+    return trim($surname);
+}
+
+/**
+ * Generate customer WiFi password.
+ */
+function genieacs_generate_wifi_password($fullname)
+{
+    $surname = genieacs_extract_surname($fullname);
+
+    $surname = strtolower($surname);
+    $surname = preg_replace('/[^a-z0-9]/', '', $surname);
+
+    if ($surname === '') {
+        throw new RuntimeException('Unable to extract customer surname.');
+    }
+
+    return $surname . '_' . date('Y');
+}
+
+/**
+ * Generate customer WiFi SSID.
+ */
+function genieacs_generate_wifi_ssid($fullname, $band = '2g')
+{
+    $surname = genieacs_extract_surname($fullname);
+
+    if ($surname === '') {
+        throw new RuntimeException('Unable to extract customer surname.');
+    }
+
+    $ssid = strtoupper($surname) . ' FIBER';
+
+    if ($band === '5g') {
+        $ssid .= '-5G';
+    }
+
+    return $ssid;
+}
+
+/**
+ * Read a BILLSYS customer custom field.
+ */
+function genieacs_customer_field_get($customerId, $fieldName)
+{
+    $row = ORM::for_table('tbl_customers_fields')
+        ->where('customer_id', (int)$customerId)
+        ->where('field_name', $fieldName)
+        ->find_one();
+
+    return $row ? (string)$row->field_value : '';
+}
+
+/**
+ * Save or update a BILLSYS customer custom field.
+ */
+function genieacs_customer_field_set($customerId, $fieldName, $value)
+{
+    $row = ORM::for_table('tbl_customers_fields')
+        ->where('customer_id', (int)$customerId)
+        ->where('field_name', $fieldName)
+        ->find_one();
+
+    if (!$row) {
+        $row = ORM::for_table('tbl_customers_fields')->create();
+        $row->customer_id = (int)$customerId;
+        $row->field_name = $fieldName;
+    }
+
+    $row->field_value = (string)$value;
+    $row->save();
+}
+
+/**
+ * Generate credentials only when they do not already exist.
+ */
+function genieacs_customer_wifi_prepare($customerId, $fullname)
+{
+    $ssid24 = genieacs_customer_field_get($customerId, 'WiFi SSID 2.4GHz');
+    $ssid5 = genieacs_customer_field_get($customerId, 'WiFi SSID 5GHz');
+    $password = genieacs_customer_field_get($customerId, 'WiFi Password');
+
+    if ($ssid24 === '') {
+        $ssid24 = genieacs_generate_wifi_ssid($fullname, '2g');
+        genieacs_customer_field_set($customerId, 'WiFi SSID 2.4GHz', $ssid24);
+    }
+
+    if ($ssid5 === '') {
+        $ssid5 = genieacs_generate_wifi_ssid($fullname, '5g');
+        genieacs_customer_field_set($customerId, 'WiFi SSID 5GHz', $ssid5);
+    }
+
+    if ($password === '') {
+        $password = genieacs_generate_wifi_password($fullname);
+        genieacs_customer_field_set($customerId, 'WiFi Password', $password);
+    }
+
+    return [
+        'ssid24' => $ssid24,
+        'ssid5' => $ssid5,
+        'password' => $password
+    ];
+}
 
 
 /**
@@ -483,6 +612,14 @@ function genieacs()
 
                 $d['_customer_id'] = (string)$customerId;
                 $d['_customer_name'] = trim((string)$customerMap[$lookup]['name']) ?: ('Customer #' . $customerId);
+                $wifiCredentials = genieacs_customer_wifi_prepare(
+                    $customerId,
+                    $d['_customer_name']
+                );
+
+                $d['_generated_ssid24'] = $wifiCredentials['ssid24'];
+                $d['_generated_ssid5'] = $wifiCredentials['ssid5'];
+                $d['_generated_wifi_password'] = $wifiCredentials['password'];
                 $d['_pppoe'] = $pppoe;
                 $d['_manufacturer'] = genieacs_value($d, 'InternetGatewayDevice.DeviceInfo.Manufacturer');
                 $d['_model'] = genieacs_value($d, 'InternetGatewayDevice.DeviceInfo.ModelName');
@@ -651,6 +788,71 @@ function genieacs_wifi()
         $result=genieacs_nbi_request('POST','/devices/'.rawurlencode($id).'/tasks',['name'=>'setParameterValues','parameterValues'=>$params],['timeout'=>30000,'connection_request'=>'']);
         r2($back,'s','Task submitted: '.(string)($result['_id'] ?? 'queued').'. Check task execution before reporting success.');
     } catch (Throwable $e) { r2($back,'e',$e->getMessage()); }
+}
+
+function genieacs_autowifi()
+{
+    $back = getUrl('plugin/genieacs');
+    genieacs_guard($back, true);
+
+    $id = trim((string)($_POST['device_id'] ?? ''));
+    if ($id === '') r2($back, 'e', 'Select a device.');
+
+    $links = genieacs_links_get();
+    if (!isset($links[$id])) r2($back, 'e', 'Assign this ONU to a BILLSYS customer before managing it.');
+
+    $customerId = (int)$links[$id]['customer_id'];
+    $customer = ORM::for_table('tbl_customers')->find_one($customerId);
+    if (!$customer) r2($back, 'e', 'Customer not found.');
+
+    try {
+        // Reads saved credentials, or generates and saves them if missing.
+        $creds = genieacs_customer_wifi_prepare($customerId, trim((string)$customer->fullname));
+
+        if (strlen($creds['password']) < 8 || strlen($creds['password']) > 63) {
+            r2($back, 'e', 'Generated WiFi password must be 8 to 63 characters. Edit the customer\'s "WiFi Password" field first.');
+        }
+
+        $wlan = 'InternetGatewayDevice.LANDevice.1.WLANConfiguration.';
+        $devices = genieacs_nbi_request('GET', '/devices/', null, [
+            'query' => json_encode(['_id' => $id]),
+            'projection' => implode(',', [
+                '_id',
+                $wlan . '1.SSID', $wlan . '1.KeyPassphrase', $wlan . '1.PreSharedKey.1.KeyPassphrase',
+                $wlan . '5.SSID', $wlan . '5.KeyPassphrase', $wlan . '5.PreSharedKey.1.KeyPassphrase',
+            ])
+        ]);
+        $device = $devices[0] ?? [];
+        if (empty($device['_id'])) r2($back, 'e', 'ONU not found in GenieACS.');
+
+        $bands = [
+            '1' => $creds['ssid24'],   // 2.4 GHz
+            '5' => $creds['ssid5'],    // 5 GHz
+        ];
+
+        $params = [];
+        foreach ($bands as $index => $ssid) {
+            if (!genieacs_parameter_exists($device, $wlan . $index . '.SSID')) {
+                continue; // this radio does not exist on this ONU
+            }
+            $params[] = [$wlan . $index . '.SSID', $ssid, 'xsd:string'];
+
+            $passPath = genieacs_wifi_password_path($device, $index);
+            if ($passPath !== '') {
+                $params[] = [$passPath, $creds['password'], 'xsd:string'];
+            }
+        }
+
+        if (!$params) r2($back, 'e', 'No supported WiFi parameters found on this ONU.');
+
+        $result = genieacs_nbi_request('POST', '/devices/' . rawurlencode($id) . '/tasks',
+            ['name' => 'setParameterValues', 'parameterValues' => $params],
+            ['timeout' => 30000, 'connection_request' => '']);
+
+        r2($back, 's', 'Auto WiFi task submitted: ' . (string)($result['_id'] ?? 'queued') . '. Check task execution before reporting success.');
+    } catch (Throwable $e) {
+        r2($back, 'e', $e->getMessage());
+    }
 }
 function genieacs_reboot()
 {
